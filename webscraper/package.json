@@ -1,0 +1,16 @@
+{
+  "name": "recipeai",
+  "version": "1.0.0",
+  "description": "generate recipes with ai",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node scrape.js"
+  },
+  "author": "Jack Byrne",
+  "license": "ISC",
+  "dependencies": {
+    "mongoose": "^7.4.2",
+    "puppeteer": "^21.0.2"
+  }
+}
