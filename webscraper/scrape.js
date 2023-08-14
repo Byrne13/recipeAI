@@ -14,7 +14,7 @@ const prepTimecss = 'n/a';
 const categoriescss = '.taxo-display:not(.flex-container) a[href*="/categories/"]';
 const equipmentcss = '.taxo-display:not(.flex-container) a[href*="/equipment/"]';
 
-const numberOfPages = 1; // Adjust based on how many pages you want to scrape
+const numberOfPages = 120; // Adjust based on how many pages you want to scrape
 
 async function scrapeRecipe(url) {
   // Launch the browser and go to the recipe page  
@@ -24,8 +24,21 @@ async function scrapeRecipe(url) {
 
   // Get the data
   const title = await page.$eval('h1', h1 => h1.textContent);
-  const ingredients = await page.$$eval(ingredientscss, items => items.map(item => item.textContent));
-  const instructions = await page.$eval(instructionscss, div => div.textContent);
+  // Get the ingredients and remove unwanted parts
+  const ingredientsRaw = await page.$eval(ingredientscss, div => div.textContent);
+  const ingredients = ingredientsRaw
+    .split('\n') // Split by newline
+    .map(item => item.trim()) // Trim whitespace
+    .filter(item => item.length > 0 && item !== 'Ingredients'); // Remove empty lines and the title "Ingredients"
+
+  // Get the instructions and split them into steps
+  const instructionsRaw = await page.$eval(instructionscss, div => div.textContent);
+  const instructions = instructionsRaw
+    .replace('Directions', '') // Remove the title "Directions"
+    .split('\n') // Split by newline
+    .map(step => step.trim()) // Trim whitespace
+    .filter(step => step.length > 0); // Remove empty lines
+
   const prepTime = await page.$eval(prepTimecss, div => div.textContent.trim()).catch(() => null); // Replace with correct CSS selector
   const categories = await page.$$eval(categoriescss, items => items.map(item => item.textContent)).catch(() => []); // Replace with correct CSS selector
   const equipment = await page.$$eval(equipmentcss, items => items.map(item => item.textContent)).catch(() => []); // Replace with correct CSS selector
@@ -36,12 +49,13 @@ async function scrapeRecipe(url) {
 
  // Return the data
   return {
+    url: url,
     title: title.trim(),
-    ingredients: ingredients,
-    instructions: instructions.trim(),
+    ingredients: [...new Set(ingredients)], // Remove duplicates
+    instructions: instructions,
     prepTime: prepTime,
-    categories: categories,
-    equipment: equipment
+    categories: [...new Set(categories)], // Remove duplicates
+    equipment: [...new Set(equipment)] // Remove duplicates
   };
 }
 
@@ -59,28 +73,33 @@ async function getRecipeLinks(url, browser) {
   }
 
   async function scrapeAllRecipes(baseURL, numberOfPages) {
-    const browser = await launch();
-    const allRecipes = [];
-    let totalRecipesToScrape = 0;
-  
-    // Loop through all the pages to get the links to each recipe
-    for (let i = 1; i <= numberOfPages; i++) {
-      const url = `${baseURL}?page=${i}`; // Adjust this URL pattern based on the website structure
-      const links = await getRecipeLinks(url, browser);
-      totalRecipesToScrape += links.length; // Add the number of links on this page to the total
+    let browser;
+    try {
+      browser = await launch();
+    } catch (error) {
+      console.error('Failed to launch browser:', error);
+      return []; // Exit if browser can't be launched
     }
   
-    console.log(`Starting to scrape ${totalRecipesToScrape} recipes...`);
+    const allRecipes = [];
+  
+    console.log(`Starting to scrape recipes from ${numberOfPages} pages...`);
   
     for (let i = 1; i <= numberOfPages; i++) {
-      const url = `${baseURL}?page=${i}`;
-      const links = await getRecipeLinks(url, browser);
+      const url = `${baseURL}/page/${i}`;
+      let links;
+      try {
+        links = await getRecipeLinks(url, browser);
+      } catch (error) {
+        console.error(`Failed to get links from ${url}: ${error}`);
+        continue; // Skip to the next iteration if this page fails
+      }
   
       for (const [index, link] of links.entries()) {
         try {
           const recipe = await scrapeRecipe(link);
           allRecipes.push(recipe);
-          console.log(`Scraped ${index + 1} of ${links.length} recipes from page ${i} (Total: ${allRecipes.length} of ${totalRecipesToScrape})`);
+          console.log(`Scraped ${index + 1} of ${links.length} recipes from page ${i} (Total: ${allRecipes.length})`);
         } catch (error) {
           console.error(`Failed to scrape ${link}: ${error}`);
         }
@@ -90,11 +109,16 @@ async function getRecipeLinks(url, browser) {
       }
     }
   
-    await browser.close();
+    try {
+      await browser.close();
+    } catch (error) {
+      console.error('Failed to close browser:', error);
+    }
   
     console.log(`Finished scraping ${allRecipes.length} recipes.`);
     return allRecipes;
   }
+  
   
   async function runScraper(){
 
@@ -113,13 +137,14 @@ async function getRecipeLinks(url, browser) {
 
     //define a schema
     const recipeSchema = new mongoose.Schema({
-        title: String,
-        ingredients: [String],
-        instructions: String,
-        prepTime: String, // Optional, you can make this a Number if preferred
-        categories: [String], // Array of categories
-        equipment: [String], // Array of equipment
-      });
+      url: String,
+      title: String,
+      ingredients: [String],
+      instructions: [String],
+      prepTime: String,
+      categories: [String],
+      equipment: [String],
+    });
     
     const Recipe = mongoose.model('Recipe', recipeSchema);
  
@@ -127,7 +152,7 @@ async function getRecipeLinks(url, browser) {
     console.log('Scraping recipes...');
     const scrapedRecipes = await scrapeAllRecipes(url, numberOfPages); // Use await here
 
-    console.log(scrapedRecipes);
+    //console.log(scrapedRecipes);
 
     console.log('Saving recipes to MongoDB...');
 
@@ -135,7 +160,7 @@ async function getRecipeLinks(url, browser) {
         const recipe = new Recipe(recipeData);
         try {
             await recipe.save(); // Now it's inside an async function
-            console.log('Recipe saved successfully:', recipe.title);
+            //console.log('Recipe saved successfully:', recipe.title);
         } catch (err) {
             console.log(err);
         }
