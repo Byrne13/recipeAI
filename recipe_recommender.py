@@ -2,29 +2,61 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from sklearn.preprocessing import MultiLabelBinarizer
 
-# Preprocess the data
+import numpy as np
+
+
+import re
+
 def preprocess_data(data):
-    # Extract the 'ingredients' field from each recipe
-    #ingredients_list = [recipe['ingredients'] for recipe in data]
+    processed_ingredients = []
+
+    # Iterate through the DataFrame's rows
+    for index, row in data.iterrows():
+        # Access the 'ingredients' column using the row's index
+        ingredients = row['ingredients']
+        parsed_ingredients = [re.findall(r'\b\w+\b', ingredient)[-1] for ingredient in ingredients if ingredient.strip()]
+        processed_ingredients.append(parsed_ingredients)
 
     # Initialize the MultiLabelBinarizer
     mlb = MultiLabelBinarizer()
 
     # Fit the MultiLabelBinarizer to the ingredients list and transform the data
-    processed_data = mlb.fit_transform(data)
-    
-    return processed_data.tolist()
+    processed_data = mlb.fit_transform(processed_ingredients)
 
-# Calculate similarity between two recipes
-def calculate_similarity(recipe1, recipe2):
-    return cosine_similarity(recipe1, recipe2)
+    return processed_data.tolist(), mlb.classes_, mlb
 
-# Recommend similar recipes
-def recommend_recipes(target_recipe, all_recipes, top_n=5):
-    similarities = [calculate_similarity(target_recipe, recipe) for recipe in all_recipes]
-    return sorted(range(len(similarities)), key=lambda i: similarities[i], reverse=True)[:top_n]
 
-# Example usage
-#processed_data = preprocess_data(data)
-#recommended_recipes = recommend_recipes(target_recipe, processed_data)
+def compute_cosine_similarity(user_vector, all_recipes):
+    user_vector = np.array(user_vector).reshape(1, -1)
+
+    # Transform the list of lists into a numpy array
+    all_recipes = np.array(all_recipes)
+
+    similarities = [cosine_similarity(user_vector, recipe.reshape(1, -1))[0][0] for recipe in all_recipes]
+
+    return similarities
+
+
+def generate_new_recipe(user_ingredients, original_data, all_recipes, mlb, top_n=5):
+    user_vector = mlb.transform([user_ingredients])
+
+    # Compute similarities using the updated function
+    similarities = compute_cosine_similarity(user_vector, all_recipes)
+
+    # Get top N similar recipes
+    top_indexes = sorted(range(len(similarities)), key=lambda i: similarities[i], reverse=True)[:top_n]
+    top_recipes = [original_data.iloc[i] for i in top_indexes]
+
+    new_recipe_name = "New Recipe Featuring " + ", ".join(user_ingredients)
+    new_recipe_ingredients = []
+    for recipe in top_recipes:
+        new_recipe_ingredients += recipe['ingredients']
+
+    new_recipe = {
+        'name': new_recipe_name,
+        'ingredients': new_recipe_ingredients
+    }
+
+    return new_recipe
+
 
