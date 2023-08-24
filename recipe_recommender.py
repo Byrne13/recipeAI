@@ -12,13 +12,9 @@ import re
 
 
 
-def preprocess_instructions(data, max_instruction_length=None):
+def preprocess_instructions(data, tokenizer, max_instruction_length):
     # Process instructions at the recipe level
     all_instructions = [' '.join(instructions) for instructions in data['instructions']]
-
-    # Initialize the tokenizer
-    tokenizer = Tokenizer()
-    tokenizer.fit_on_texts(all_instructions)
 
     # Tokenize and pad the instructions
     tokenized_instructions = tokenizer.texts_to_sequences(all_instructions)
@@ -26,10 +22,11 @@ def preprocess_instructions(data, max_instruction_length=None):
     # Pad the tokenized instructions
     tokenized_instructions = pad_sequences(tokenized_instructions, maxlen=max_instruction_length)
 
-    return np.array(tokenized_instructions), tokenizer
+    return np.array(tokenized_instructions)
 
 
-def preprocess_data(data):
+
+def preprocess_data(data, mlb, max_features=None):
     processed_ingredients = []
 
     # Iterate through the DataFrame's rows
@@ -39,11 +36,19 @@ def preprocess_data(data):
         parsed_ingredients = [re.findall(r'\b\w+\b', ingredient)[-1] for ingredient in ingredients if ingredient.strip()]
         processed_ingredients.append(parsed_ingredients)
 
-    # Initialize the MultiLabelBinarizer
-    mlb = MultiLabelBinarizer()
-
     # Fit the MultiLabelBinarizer to the ingredients list and transform the data
     processed_data = mlb.fit_transform(processed_ingredients)
+
+    # If max_features is provided, adjust the shape
+    if max_features is not None:
+        current_features = processed_data.shape[1]
+        if current_features < max_features:
+            # If current_features is less than max_features, pad with zeros
+            padding = np.zeros((processed_data.shape[0], max_features - current_features))
+            processed_data = np.hstack((processed_data, padding))
+        elif current_features > max_features:
+            # If current_features is greater than max_features, truncate
+            processed_data = processed_data[:, :max_features]
 
     return np.array(processed_data.tolist()), mlb.classes_, mlb
 
